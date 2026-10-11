@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ColorLens - 色調査カメラ (Made by ちんいち)</title>
+  <meta name="author" content="ちんいち">
+  <meta name="copyright" content="© ちんいち">
+  <meta name="theme-color" content="#121214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ColorLens">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0c0c0e;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans JP", sans-serif;
+      color: #fff;
+    }
+
+    #app-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ビデオ・プレビューエリア */
+    #video-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+    video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    canvas#capture-canvas {
+      display: none;
+    }
+    img#frozen-frame {
+      display: none;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* トップバー */
+    .top-bar {
+      position: absolute;
+      top: env(safe-area-inset-top, 16px);
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 25;
+      pointer-events: none;
+    }
+    .top-bar > * {
+      pointer-events: auto;
+    }
+    .left-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(18, 18, 22, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff4757;
+      animation: pulse 1.6s infinite;
+    }
+    .status-dot.frozen {
+      background: #ffd32a;
+      animation: none;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* ちんいち著作バッジ */
+    .author-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(255, 215, 0, 0.18);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 215, 0, 0.45);
+      color: #ffd700;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: all 0.2s;
+    }
+    .author-badge:active {
+      transform: scale(0.94);
+      background: rgba(255, 215, 0, 0.3);
+    }
+
+    .tool-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .tool-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(22, 22, 28, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.18s;
+    }
+    .tool-btn:active {
+      transform: scale(0.9);
+      background: rgba(255, 255, 255, 0.25);
+    }
+    .tool-btn.active {
+      background: #ffd32a;
+      color: #121214;
+      border-color: #ffd32a;
+      box-shadow: 0 0 12px rgba(255, 211, 42, 0.4);
+    }
+
+    /* レティクル（照準マーカー） */
+    #reticle {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: transform 0.04s linear;
+      z-index: 15;
+    }
+    .reticle-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2.5px solid #fff;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(0, 0, 0, 0.6);
+    }
+    .reticle-ring.frozen {
+      border-color: #ffd32a;
+    }
+    .reticle-cross-h, .reticle-cross-v {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 0 3px rgba(0,0,0,0.9);
+    }
+    .reticle-cross-h {
+      top: 50%;
+      left: 6px;
+      right: 6px;
+      height: 1.5px;
+      transform: translateY(-50%);
+    }
+    .reticle-cross-v {
+      left: 50%;
+      top: 6px;
+      bottom: 6px;
+      width: 1.5px;
+      transform: translateX(-50%);
+    }
+    .reticle-spot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 0 6px rgba(0,0,0,0.9);
+      background-color: #3498db;
+    }
+
+    /* 拡大ルーペ（Magnifier） */
+    #magnifier {
+      position: absolute;
+      width: 124px;
+      height: 124px;
+      border-radius: 50%;
+      border: 4px solid #fff;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 16;
+      background: #000;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.2s;
+    }
+    #magnifier canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+    .magnifier-crosshair {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .mag-center-box {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      transform: translate(-50%, -50%);
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1.5px rgba(0,0,0,0.8);
+    }
+
+    /* ☀️ 屋外・ハイコントラストモード対応 */
+    body.outdoor-mode .reticle-ring {
+      border: 3.5px solid #ffeb3b !important;
+      box-shadow: 0 0 0 3px #000 !important;
+    }
+    body.outdoor-mode #magnifier {
+      border: 5px solid #ffeb3b !important;
+      box-shadow: 0 0 0 4px #000, 0 12px 30px rgba(0,0,0,0.9) !important;
+    }
+    body.outdoor-mode .color-card {
+      background: #000000 !important;
+      border: 3px solid #ffeb3b !important;
+      box-shadow: 0 0 20px rgba(0,0,0,0.9) !important;
+    }
+    body.outdoor-mode .color-jp-name {
+      color: #ffeb3b !important;
+      font-size: 20px !important;
+      font-weight: 900 !important;
+    }
+    body.outdoor-mode .chip {
+      background: #1a1a1a !important;
+      border: 2px solid #fff !important;
+    }
+    body.outdoor-mode .chip-value {
+      color: #ffeb3b !important;
+      font-weight: 800 !important;
+    }
+
+    /* 下部パネル */
+    .bottom-container {
+      position: absolute;
+      bottom: env(safe-area-inset-bottom, 14px);
+      left: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 20;
+      pointer-events: none;
+    }
+    .bottom-container > * {
+      pointer-events: auto;
+    }
+
+    .freeze-btn-bar {
+      display: flex;
+      justify-content: center;
+    }
+    .freeze-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      border-radius: 30px;
+      background: rgba(22, 22, 28, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1.5px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+      transition: all 0.2s;
+    }
+    .freeze-btn:active {
+      transform: scale(0.95);
+    }
+    .freeze-btn.frozen {
+      background: #ffd32a;
+      color: #121214;
+      border-color: #ffd32a;
+      box-shadow: 0 0 16px rgba(255, 211, 42, 0.5);
+    }
+
+    /* カラーカード */
+    .color-card {
+      background: rgba(24, 24, 30, 0.95);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 24px;
+      padding: 16px 18px;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.6);
+      transition: all 0.2s;
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .color-swatch {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      box-shadow: 0 0 16px rgba(0,0,0,0.3);
+      flex-shrink: 0;
+      background-color: #3498db;
+      transition: background-color 0.08s;
+    }
+    .color-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .color-name-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .color-jp-name {
+      font-size: 18px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #fff;
+    }
+    .color-match-rate {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      white-space: nowrap;
+    }
+    .color-en-name {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bookmark-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 20px;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .bookmark-btn:active {
+      transform: scale(0.92);
+    }
+    .bookmark-btn.saved {
+      background: #ffd32a;
+      color: #121214;
+      border-color: #ffd32a;
+      box-shadow: 0 0 14px rgba(255, 211, 42, 0.4);
+    }
+
+    /* 🎨 日塗工 (JPMA) ハイライトバー */
+    .jpma-highlight-bar {
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(255, 159, 26, 0.18), rgba(255, 215, 0, 0.12));
+      border: 1px solid rgba(255, 177, 43, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .jpma-highlight-bar:active {
+      transform: scale(0.98);
+      background: linear-gradient(135deg, rgba(255, 159, 26, 0.3), rgba(255, 215, 0, 0.25));
+    }
+    .jpma-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .jpma-badge-tag {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: #ff9f1a;
+      color: #121214;
+      letter-spacing: 0.3px;
+    }
+    .jpma-code-value {
+      font-size: 15px;
+      font-weight: 800;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+    .jpma-munsell-val {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.65);
+    }
+    .jpma-copy-icon {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* コードチップ一覧 (HEX / RGB / HSL) */
+    .code-chips {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 12px;
+      padding: 7px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:active {
+      background: rgba(255, 255, 255, 0.16);
+      transform: scale(0.96);
+    }
+    .chip-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.5);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chip-value {
+      font-size: 12px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #fff;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* モーダル共通スタイル */
+    .modal-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 100;
+      align-items: flex-end;
+    }
+    .modal-overlay.open {
+      display: flex;
+    }
+    .modal-content {
+      width: 100%;
+      max-height: 85%;
+      background: #181820;
+      border-radius: 28px 28px 0 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    .modal-handle {
+      width: 40px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.3);
+      margin: 12px auto 8px;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 20px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      padding: 6px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .action-btn:active {
+      transform: scale(0.95);
+    }
+    .action-btn.danger {
+      color: #ff6b81;
+      border-color: rgba(255, 107, 129, 0.4);
+    }
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+    }
+    .palette-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .palette-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 10px 14px;
+    }
+    .p-swatch {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      flex-shrink: 0;
+    }
+    .p-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .p-name {
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .p-sub {
+      font-size: 11px;
+      color: #ff9f1a;
+      font-weight: 700;
+      margin-top: 1px;
+    }
+    .p-hex {
+      font-size: 11px;
+      font-family: monospace;
+      color: rgba(255, 255, 255, 0.55);
+    }
+    .p-delete {
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      padding: 6px;
+    }
+
+    /* About モーダル（ちんいち著作表示・オフラインガイド） */
+    .about-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+    .about-logo {
+      font-size: 40px;
+      margin-bottom: 8px;
+    }
+    .about-app-name {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .about-author-highlight {
+      display: inline-block;
+      margin: 8px 0;
+      padding: 4px 16px;
+      border-radius: 20px;
+      background: rgba(255, 215, 0, 0.2);
+      border: 1px solid rgba(255, 215, 0, 0.5);
+      color: #ffd700;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .about-copyright {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .about-feature-box {
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 12px;
+      text-align: left;
+    }
+    .about-feature-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffd32a;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .about-feature-desc {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.6;
+    }
+
+    /* トースト通知 */
+    #toast {
+      position: absolute;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(255, 255, 255, 0.95);
+      color: #121214;
+      padding: 10px 22px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* カメラ起動オーバーレイ */
+    #permission-overlay {
+      position: absolute;
+      inset: 0;
+      background: #101014;
+      z-index: 150;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      text-align: center;
+    }
+    .perm-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .perm-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .perm-author {
+      font-size: 12px;
+      color: #ffd700;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+    .perm-desc {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.6;
+      margin-bottom: 24px;
+      max-width: 320px;
+    }
+    .start-btn {
+      padding: 14px 32px;
+      border-radius: 30px;
+      background: #ffd32a;
+      color: #121214;
+      font-size: 15px;
+      font-weight: 800;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(255,211,42,0.4);
+    }
+  </style>
+</head>
+<body>
+  <div id="app-container">
+    <!-- カメラ許可/開始画面 -->
+    <div id="permission-overlay">
+      <div class="perm-icon">🎨📷</div>
+      <h2 class="perm-title">ColorLens</h2>
+      <div class="perm-author">✨ Made by ちんいち ✨</div>
+      <p class="perm-desc">
+        スマホのカメラで身の回りの色や塗料色をリアルタイム調査！<br>
+        <strong>日本塗料工業会（日塗工）色票番号</strong> に対応。
+      </p>
+      <button class="start-btn" id="start-camera-btn">カメラを開始する</button>
+    </div>
+
+    <!-- カメラプレビュー -->
+    <div id="video-wrapper">
+      <video id="camera-video" playsinline autoplay muted></video>
+      <img id="frozen-frame" alt="frozen preview">
+      <canvas id="capture-canvas"></canvas>
+    </div>
+
+    <!-- 拡大ルーペ (Magnifier) -->
+    <div id="magnifier">
+      <canvas id="magnifier-canvas" width="60" height="60"></canvas>
+      <div class="magnifier-crosshair">
+        <div class="mag-center-box"></div>
+      </div>
+    </div>
+
+    <!-- レティクル照準 -->
+    <div id="reticle">
+      <div class="reticle-ring" id="reticle-ring"></div>
+      <div class="reticle-cross-h"></div>
+      <div class="reticle-cross-v"></div>
+      <div class="reticle-spot" id="reticle-spot"></div>
+    </div>
+
+    <!-- トップバー -->
+    <div class="top-bar">
+      <div class="left-badges">
+        <div class="status-badge">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">LIVE</span>
+        </div>
+        <!-- ちんいち著作バッジ -->
+        <div class="author-badge" id="author-badge" title="アプリ情報・著作表示">
+          <span>👑 ちんいち作</span>
+        </div>
+      </div>
+
+      <div class="tool-actions">
+        <!-- 屋外モード -->
+        <button class="tool-btn" id="outdoor-toggle-btn" title="☀️ 屋外・高視認性モード">☀️</button>
+        <!-- ルーペ切替 -->
+        <button class="tool-btn active" id="magnifier-toggle-btn" title="🔍 ルーペ拡大">🔍</button>
+        <!-- カメラ前後切替 -->
+        <button class="tool-btn" id="camera-switch-btn" title="🔄 カメラ切替">🔄</button>
+        <!-- 保存パレット -->
+        <button class="tool-btn" id="palette-btn" title="🎨 保存パレット">🎨</button>
+      </div>
+    </div>
+
+    <!-- 下部インスペクターパネル -->
+    <div class="bottom-container">
+      <div class="freeze-btn-bar">
+        <button class="freeze-btn" id="freeze-btn">
+          <span id="freeze-icon">⏸</span>
+          <span id="freeze-text">一時停止してピンポイント調査</span>
+        </button>
+      </div>
+
+      <div class="color-card">
+        <div class="card-top">
+          <div class="color-swatch" id="color-swatch"></div>
+          <div class="color-meta">
+            <div class="color-name-row">
+              <span class="color-jp-name" id="color-jp-name">色を検出中...</span>
+              <span class="color-match-rate" id="color-match-rate">98%一致</span>
+            </div>
+            <div class="color-en-name" id="color-en-name">Detecting...</div>
+          </div>
+          <button class="bookmark-btn" id="bookmark-btn" title="パレットに保存">★</button>
+        </div>
+
+        <!-- 🎨 日本塗料工業会 (日塗工) 色票番号ハイライトバー -->
+        <div class="jpma-highlight-bar" id="jpma-bar" title="日塗工色票番号をコピー">
+          <div class="jpma-left">
+            <span class="jpma-badge-tag">日塗工</span>
+            <span class="jpma-code-value" id="val-jpma">25-85F</span>
+            <span class="jpma-munsell-val" id="val-munsell">(5Y 8.5/5)</span>
+          </div>
+          <div class="jpma-copy-icon">📋 タップでコピー</div>
+        </div>
+
+        <!-- カラーコードチップ (HEX / RGB / HSL) -->
+        <div class="code-chips">
+          <div class="chip" data-type="hex" id="chip-hex">
+            <div class="chip-label"><span>HEX</span><span>📋</span></div>
+            <div class="chip-value" id="val-hex">#000000</div>
+          </div>
+          <div class="chip" data-type="rgb" id="chip-rgb">
+            <div class="chip-label"><span>RGB</span><span>📋</span></div>
+            <div class="chip-value" id="val-rgb">rgb(0, 0, 0)</div>
+          </div>
+          <div class="chip" data-type="hsl" id="chip-hsl">
+            <div class="chip-label"><span>HSL</span><span>📋</span></div>
+            <div class="chip-value" id="val-hsl">hsl(0, 0%, 0%)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 保存パレットモーダル -->
+    <div id="palette-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <div class="modal-title">保存したパレット (<span id="saved-count">0</span>)</div>
+          <div class="modal-actions">
+            <button class="action-btn" id="export-json-btn">JSON</button>
+            <button class="action-btn danger" id="clear-palette-btn">消去</button>
+            <button class="action-btn" id="close-modal-btn">閉じる</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="palette-list" id="palette-list"></div>
+          <div style="text-align:center; padding:16px 0 4px; font-size:11px; color:rgba(255,255,255,0.4);">
+            ColorLens • Made with ❤️ by ちんいち
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- About（ちんいち著作表示・日塗工解説）モーダル -->
+    <div id="about-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <div class="modal-title">アプリ情報</div>
+          <div class="modal-actions">
+            <button class="action-btn" id="close-about-btn">閉じる</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="about-card">
+            <div class="about-logo">🎨📷</div>
+            <div class="about-app-name">ColorLens (カラーレンズ)</div>
+            <div class="about-author-highlight">✨ Created by ちんいち ✨</div>
+            <div class="about-copyright">© ちんいち All Rights Reserved.</div>
+          </div>
+
+          <div class="about-feature-box">
+            <div class="about-feature-title">🏷️ 日本塗料工業会（日塗工）塗料用標準色対応</div>
+            <div class="about-feature-desc">
+              建築・DIY・塗装実務で業界標準として使用される「日塗工番号（色票番号）」および「近似マンセル値」をリアルタイムに自動判定します。塗料の調色や外壁・インテリアの色合わせに最適です。
+            </div>
+          </div>
+
+          <div class="about-feature-box">
+            <div class="about-feature-title">📶 外出先・オフラインでも完全動作</div>
+            <div class="about-feature-desc">
+              PWA（Progressive Web App）およびService Workerに対応。一度ホーム画面に追加すれば、電波のない屋外でも100%端末内で動作します。
+            </div>
+          </div>
+
+          <div class="about-feature-box">
+            <div class="about-feature-title">📲 ホーム画面に追加して使う方法</div>
+            <div class="about-feature-desc">
+              • <strong>iPhone (Safari)</strong>: 共有ボタン ➔ 「ホーム画面に追加」<br>
+              • <strong>Android (Chrome)</strong>: メニュー ➔ 「アプリをインストール」または「ホーム画面に追加」
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toast">コピーしました</div>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('[PWA] Service Worker registered:', reg.scope))
+          .catch((err) => console.log('[PWA] Service Worker registration failed:', err));
+      });
+    }
+
+    // 日本塗料工業会 (JPMA) 塗料用標準色データベース
+    const JPMA_PALETTE = [
+      // 無彩色系 (N系)
+      { code: "N-95", munsell: "N9.5", r: 244, g: 244, b: 244 },
+      { code: "N-93", munsell: "N9.3", r: 236, g: 236, b: 236 },
+      { code: "N-90", munsell: "N9.0", r: 227, g: 227, b: 227 },
+      { code: "N-85", munsell: "N8.5", r: 212, g: 212, b: 212 },
+      { code: "N-80", munsell: "N8.0", r: 198, g: 198, b: 198 },
+      { code: "N-75", munsell: "N7.5", r: 182, g: 182, b: 182 },
+      { code: "N-70", munsell: "N7.0", r: 167, g: 167, b: 167 },
+      { code: "N-65", munsell: "N6.5", r: 151, g: 151, b: 151 },
+      { code: "N-60", munsell: "N6.0", r: 136, g: 136, b: 136 },
+      { code: "N-55", munsell: "N5.5", r: 121, g: 121, b: 121 },
+      { code: "N-50", munsell: "N5.0", r: 106, g: 106, b: 106 },
+      { code: "N-45", munsell: "N4.5", r: 92, g: 92, b: 92 },
+      { code: "N-40", munsell: "N4.0", r: 79, g: 79, b: 79 },
+      { code: "N-35", munsell: "N3.5", r: 66, g: 66, b: 66 },
+      { code: "N-30", munsell: "N3.0", r: 54, g: 54, b: 54 },
+      { code: "N-25", munsell: "N2.5", r: 43, g: 43, b: 43 },
+      { code: "N-20", munsell: "N2.0", r: 33, g: 33, b: 33 },
+      { code: "N-15", munsell: "N1.5", r: 24, g: 24, b: 24 },
+      { code: "N-10", munsell: "N1.0", r: 16, g: 16, b: 16 },
+
+      // 赤・赤紫・ピンク系 (05〜09系)
+      { code: "05-20B", munsell: "5R 2/2", r: 67, g: 31, b: 36 },
+      { code: "05-30B", munsell: "5R 3/2", r: 90, g: 44, b: 50 },
+      { code: "05-40D", munsell: "5R 4/4", r: 126, g: 62, b: 71 },
+      { code: "05-50F", munsell: "5R 5/6", r: 166, g: 75, b: 88 },
+      { code: "05-60H", munsell: "5R 6/8", r: 200, g: 94, b: 109 },
+      { code: "07-80D", munsell: "7.5R 8/4", r: 230, g: 178, b: 186 },
+      { code: "09-30D", munsell: "10R 3/4", r: 97, g: 57, b: 54 },
+      { code: "09-40L", munsell: "10R 4/8", r: 139, g: 78, b: 66 },
+      { code: "09-50T", munsell: "10R 5/10", r: 182, g: 90, b: 68 },
+      { code: "09-60D", munsell: "10R 6/4", r: 169, g: 119, b: 113 },
+      { code: "09-70L", munsell: "10R 7/6", r: 203, g: 146, b: 130 },
+      { code: "09-80D", munsell: "10R 8/4", r: 224, g: 180, b: 168 },
+      { code: "09-90D", munsell: "10R 9/2", r: 242, g: 219, b: 212 },
+
+      // 黄赤・橙・茶・ベージュ系 (12〜19系)
+      { code: "12-40L", munsell: "2.5YR 4/8", r: 138, g: 87, b: 53 },
+      { code: "12-50L", munsell: "2.5YR 5/8", r: 173, g: 109, b: 67 },
+      { code: "12-60H", munsell: "2.5YR 6/6", r: 186, g: 132, b: 98 },
+      { code: "15-30B", munsell: "5YR 3/2", r: 86, g: 62, b: 50 },
+      { code: "15-40D", munsell: "5YR 4/4", r: 118, g: 85, b: 69 },
+      { code: "15-50D", munsell: "5YR 5/4", r: 148, g: 111, b: 92 },
+      { code: "15-60D", munsell: "5YR 6/4", r: 178, g: 140, b: 120 },
+      { code: "15-70D", munsell: "5YR 7/4", r: 207, g: 169, b: 149 },
+      { code: "15-80D", munsell: "5YR 8/4", r: 232, g: 199, b: 180 },
+      { code: "15-90B", munsell: "5YR 9/2", r: 250, g: 230, b: 219 },
+      { code: "17-50L", munsell: "7.5YR 5/8", r: 158, g: 115, b: 66 },
+      { code: "17-60H", munsell: "7.5YR 6/6", r: 182, g: 137, b: 86 },
+      { code: "17-70L", munsell: "7.5YR 7/8", r: 212, g: 163, b: 103 },
+      { code: "17-80H", munsell: "7.5YR 8/6", r: 226, g: 186, b: 134 },
+      { code: "19-30A", munsell: "10YR 3/1", r: 78, g: 68, b: 60 },
+      { code: "19-40D", munsell: "10YR 4/4", r: 111, g: 95, b: 80 },
+      { code: "19-50B", munsell: "10YR 5/2", r: 131, g: 116, b: 102 },
+      { code: "19-60D", munsell: "10YR 6/4", r: 164, g: 145, b: 122 },
+      { code: "19-65X", munsell: "10YR 6.5/10", r: 199, g: 151, b: 78 },
+      { code: "19-70A", munsell: "10YR 7/1", r: 184, g: 177, b: 168 },
+      { code: "19-70D", munsell: "10YR 7/4", r: 196, g: 177, b: 155 },
+      { code: "19-75L", munsell: "10YR 7.5/7", r: 221, g: 184, b: 127 },
+      { code: "19-80A", munsell: "10YR 8/1", r: 210, g: 204, b: 195 },
+      { code: "19-80C", munsell: "10YR 8/3", r: 218, g: 202, b: 182 },
+      { code: "19-85A", munsell: "10YR 8.5/1", r: 222, g: 216, b: 206 },
+      { code: "19-90A", munsell: "10YR 9/1", r: 234, g: 228, b: 218 },
+
+      // 黄・アイボリー系 (22〜29系)
+      { code: "22-60H", munsell: "2.5Y 6/6", r: 167, g: 143, b: 74 },
+      { code: "22-70H", munsell: "2.5Y 7/6", r: 196, g: 171, b: 97 },
+      { code: "22-80H", munsell: "2.5Y 8/6", r: 223, g: 200, b: 122 },
+      { code: "22-85D", munsell: "2.5Y 8.5/4", r: 223, g: 210, b: 165 },
+      { code: "22-90B", munsell: "2.5Y 9/2", r: 238, g: 230, b: 207 },
+      { code: "25-60A", munsell: "5Y 6/1", r: 149, g: 148, b: 137 },
+      { code: "25-70A", munsell: "5Y 7/1", r: 176, g: 175, b: 159 },
+      { code: "25-70B", munsell: "5Y 7/2", r: 183, g: 179, b: 154 },
+      { code: "25-80A", munsell: "5Y 8/1", r: 203, g: 203, b: 184 },
+      { code: "25-80C", munsell: "5Y 8/3", r: 206, g: 202, b: 171 },
+      { code: "25-85A", munsell: "5Y 8.5/1", r: 219, g: 217, b: 200 },
+      { code: "25-85B", munsell: "5Y 8.5/2", r: 220, g: 216, b: 189 },
+      { code: "25-85F", munsell: "5Y 8.5/5", r: 222, g: 211, b: 165 },
+      { code: "25-90A", munsell: "5Y 9/1", r: 233, g: 231, b: 217 },
+      { code: "25-90B", munsell: "5Y 9/2", r: 234, g: 230, b: 209 },
+      { code: "27-80H", munsell: "7.5Y 8/7", r: 203, g: 190, b: 101 },
+      { code: "27-85V", munsell: "7.5Y 8.5/11", r: 224, g: 213, b: 76 },
+      { code: "29-70L", munsell: "10Y 7/8", r: 168, g: 178, b: 81 },
+      { code: "29-80H", munsell: "10Y 8/6", r: 197, g: 205, b: 112 },
+      { code: "29-85B", munsell: "10Y 8.5/2", r: 220, g: 223, b: 183 },
+
+      // 黄緑・若草・緑系 (32〜59系)
+      { code: "35-50B", munsell: "5GY 5/2", r: 115, g: 124, b: 112 },
+      { code: "35-60D", munsell: "5GY 6/4", r: 140, g: 156, b: 127 },
+      { code: "35-70B", munsell: "5GY 7/2", r: 171, g: 182, b: 166 },
+      { code: "35-80B", munsell: "5GY 8/2", r: 199, g: 210, b: 191 },
+      { code: "39-80H", munsell: "10GY 8/6", r: 171, g: 203, b: 132 },
+      { code: "42-70H", munsell: "2.5G 7/6", r: 131, g: 182, b: 121 },
+      { code: "45-60D", munsell: "5G 6/4", r: 110, g: 154, b: 126 },
+      { code: "45-70D", munsell: "5G 7/4", r: 137, g: 179, b: 151 },
+      { code: "45-80D", munsell: "5G 8/4", r: 169, g: 207, b: 183 },
+      { code: "49-40H", munsell: "10G 4/6", r: 37, g: 106, b: 82 },
+      { code: "52-40L", munsell: "2.5BG 4/8", r: 22, g: 104, b: 97 },
+      { code: "55-60L", munsell: "5BG 6/8", r: 58, g: 151, b: 146 },
+      { code: "55-70D", munsell: "5BG 7/4", r: 126, g: 179, b: 175 },
+      { code: "55-80D", munsell: "5BG 8/4", r: 157, g: 203, b: 199 },
+      { code: "55-90A", munsell: "5BG 9/1", r: 210, g: 228, b: 226 },
+
+      // 青・ターコイズ・マリンブルー系 (62〜79系)
+      { code: "65-40B", munsell: "5B 4/2", r: 73, g: 94, b: 103 },
+      { code: "65-50D", munsell: "5B 5/4", r: 91, g: 121, b: 135 },
+      { code: "65-60D", munsell: "5B 6/4", r: 118, g: 150, b: 165 },
+      { code: "65-70D", munsell: "5B 7/4", r: 146, g: 179, b: 194 },
+      { code: "65-80D", munsell: "5B 8/4", r: 177, g: 208, b: 223 },
+      { code: "69-50L", munsell: "10B 5/8", r: 34, g: 123, b: 156 },
+      { code: "69-70L", munsell: "10B 7/7", r: 97, g: 173, b: 204 },
+      { code: "72-40L", munsell: "2.5PB 4/8", r: 34, g: 98, b: 155 },
+      { code: "75-30D", munsell: "5PB 3/4", r: 42, g: 65, b: 98 },
+      { code: "75-40L", munsell: "5PB 4/8", r: 51, g: 89, b: 143 },
+      { code: "75-50L", munsell: "5PB 5/8", r: 81, g: 117, b: 174 },
+      { code: "75-70D", munsell: "5PB 7/4", r: 142, g: 165, b: 198 },
+      { code: "75-80D", munsell: "5PB 8/4", r: 169, g: 190, b: 222 },
+      { code: "75-90A", munsell: "5PB 9/1", r: 208, g: 215, b: 227 },
+
+      // 紫・ラベンダー系 (82〜99系)
+      { code: "85-40H", munsell: "5P 4/6", r: 89, g: 79, b: 120 },
+      { code: "85-60H", munsell: "5P 6/6", r: 138, g: 127, b: 169 },
+      { code: "85-70D", munsell: "5P 7/4", r: 159, g: 150, b: 185 },
+      { code: "85-80D", munsell: "5P 8/4", r: 186, g: 174, b: 211 },
+      { code: "95-50H", munsell: "5RP 5/8", r: 127, g: 75, b: 117 },
+      { code: "95-70H", munsell: "5RP 7/6", r: 181, g: 129, b: 171 },
+      { code: "95-80D", munsell: "5RP 8/4", r: 204, g: 166, b: 196 }
+    ];
+
+    // 日本の伝統色 & 代表的な基本色彩辞書
+    const COLOR_DICTIONARY = [
+      // 赤・紅・桃
+      { jp: "紅赤 (べにあか)", en: "Crimson Red", r: 217, g: 0, b: 56 },
+      { jp: "茜色 (あかねいろ)", en: "Madder Red", r: 183, g: 40, b: 46 },
+      { jp: "深緋 (こきひ)", en: "Deep Scarlet", r: 197, g: 61, b: 67 },
+      { jp: "真紅 (しんく)", en: "Pure Crimson", r: 162, g: 32, b: 65 },
+      { jp: "朱色 (しゅいろ)", en: "Vermilion", r: 235, g: 79, b: 56 },
+      { jp: "緋色 (ひいろ)", en: "Scarlet", r: 211, g: 56, b: 40 },
+      { jp: "珊瑚色 (さんごいろ)", en: "Coral Pink", r: 248, g: 103, b: 107 },
+      { jp: "桜色 (さくらいろ)", en: "Cherry Blossom", r: 254, g: 223, b: 225 },
+      { jp: "桃色 (ももいろ)", en: "Peach Pink", r: 240, g: 145, b: 153 },
+      { jp: "撫子色 (なでしこいろ)", en: "Dianthus Pink", r: 238, g: 120, b: 152 },
+      { jp: "躑躅色 (つつじいろ)", en: "Azalea Magenta", r: 224, g: 60, b: 138 },
+      { jp: "カーマイン", en: "Carmine", r: 215, g: 0, b: 64 },
+      { jp: "サーモンピンク", en: "Salmon Pink", r: 255, g: 142, b: 130 },
+
+      // 橙・黄・茶
+      { jp: "橙色 (だいだいいろ)", en: "Bitter Orange", r: 238, g: 120, b: 0 },
+      { jp: "蜜柑色 (みかんいろ)", en: "Mandarin Orange", r: 240, g: 131, b: 0 },
+      { jp: "山吹色 (やまぶきいろ)", en: "Golden Yellow", r: 255, g: 177, b: 27 },
+      { jp: "琥珀色 (こはくいろ)", en: "Amber", r: 203, g: 126, b: 38 },
+      { jp: "黄金 (こがね)", en: "Pure Gold", r: 230, g: 180, b: 34 },
+      { jp: "向日葵色 (ひまわりいろ)", en: "Sunflower Yellow", r: 252, g: 200, b: 0 },
+      { jp: "檸檬色 (れもんいろ)", en: "Lemon Yellow", r: 255, g: 243, b: 60 },
+      { jp: "黄土色 (おうどいろ)", en: "Yellow Ochre", r: 195, g: 145, b: 66 },
+      { jp: "芥子色 (からしいろ)", en: "Mustard", r: 208, g: 164, b: 68 },
+      { jp: "焦茶 (こげちゃ)", en: "Dark Brown", r: 102, g: 58, b: 39 },
+      { jp: "茶色 (ちゃいろ)", en: "Classic Brown", r: 138, g: 75, b: 42 },
+      { jp: "ベージュ", en: "Beige", r: 238, g: 220, b: 194 },
+
+      // 緑・草・碧
+      { jp: "萌黄色 (もえぎいろ)", en: "Fresh Sprout Green", r: 153, g: 186, b: 24 },
+      { jp: "若草色 (わかくさいろ)", en: "Young Grass Green", r: 176, g: 202, b: 114 },
+      { jp: "鶯色 (うぐいすいろ)", en: "Bush Warbler Olive", r: 113, g: 114, b: 57 },
+      { jp: "常磐色 (ときわいろ)", en: "Evergreen Pine", r: 0, g: 123, b: 67 },
+      { jp: "松葉色 (まつばいろ)", en: "Pine Needle Green", r: 66, g: 107, b: 66 },
+      { jp: "深緑 (ふかみどり)", en: "Deep Forest Green", r: 0, g: 85, b: 46 },
+      { jp: "翠玉色 (すいぎょくいろ)", en: "Emerald Green", r: 0, g: 163, b: 129 },
+      { jp: "ミントグリーン", en: "Mint Green", r: 143, g: 232, b: 186 },
+      { jp: "ライムグリーン", en: "Lime Green", r: 50, g: 205, b: 50 },
+      { jp: "フォレストグリーン", en: "Forest Green", r: 34, g: 139, b: 34 },
+      { jp: "白緑 (びゃくろく)", en: "Pale Mint Whitish Green", r: 203, g: 230, b: 204 },
+
+      // 青・藍・空
+      { jp: "浅葱色 (あさぎいろ)", en: "Light Aqua Green-Blue", r: 0, g: 163, b: 175 },
+      { jp: "水色 (みずいろ)", en: "Water Blue", r: 134, g: 206, b: 235 },
+      { jp: "空色 (そらいろ)", en: "Sky Blue", r: 141, g: 198, b: 238 },
+      { jp: "新橋色 (しんばしいろ)", en: "Turquoise Blue", r: 0, g: 137, b: 167 },
+      { jp: "藍色 (あいいろ)", en: "Japanese Indigo", r: 22, g: 79, b: 125 },
+      { jp: "瑠璃色 (るりいろ)", en: "Lapis Lazuli", r: 31, g: 78, b: 161 },
+      { jp: "群青色 (ぐんじょういろ)", en: "Ultramarine", r: 76, g: 92, b: 153 },
+      { jp: "紺色 (こんいろ)", en: "Navy Blue", r: 15, g: 37, b: 80 },
+      { jp: "留紺 (とまりこん)", en: "Midnight Navy", r: 28, g: 40, b: 65 },
+      { jp: "シアン", en: "Cyan", r: 0, g: 255, b: 255 },
+      { jp: "ロイヤルブルー", en: "Royal Blue", r: 65, g: 105, b: 225 },
+
+      // 紫・藤
+      { jp: "藤色 (ふじいろ)", en: "Wisteria Lilac", r: 187, g: 170, b: 215 },
+      { jp: "菫色 (すみれいろ)", en: "Violet", r: 112, g: 88, b: 163 },
+      { jp: "桔梗色 (ききょういろ)", en: "Bellflower Purple", r: 94, g: 86, b: 157 },
+      { jp: "紫紺 (しこん)", en: "Dark Violet", r: 60, g: 36, b: 73 },
+      { jp: "古代紫 (こだいむらさき)", en: "Antique Purple", r: 137, g: 87, b: 129 },
+      { jp: "ラベンダー", en: "Lavender", r: 230, g: 230, b: 250 },
+      { jp: "マゼンタ", en: "Magenta", r: 255, g: 0, b: 255 },
+
+      // 白・黒・灰
+      { jp: "純白 (じゅんぱく)", en: "Pure White", r: 255, g: 255, b: 255 },
+      { jp: "胡粉色 (ごふんいろ)", en: "Shell White", r: 255, g: 254, b: 249 },
+      { jp: "生成り色 (きなりいろ)", en: "Off White / Ecru", r: 251, g: 242, b: 227 },
+      { jp: "銀鼠 (ぎんねず)", en: "Silver Grey", r: 175, g: 175, b: 175 },
+      { jp: "チャコールグレー", en: "Charcoal Grey", r: 54, g: 65, b: 67 },
+      { jp: "漆黒 (しっこく)", en: "Jet Black", r: 13, g: 13, b: 13 },
+      { jp: "純黒 (じゅんこく)", en: "Pitch Black", r: 0, g: 0, b: 0 }
+    ];
+
+    // 加重ユークリッド色距離
+    function calcColorDist(r1, g1, b1, r2, g2, b2) {
+      const rmean = (r1 + r2) / 2;
+      const dr = r1 - r2;
+      const dg = g1 - g2;
+      const db = b1 - b2;
+      const weightR = 2 + rmean / 256;
+      const weightG = 4.0;
+      const weightB = 2 + (255 - rmean) / 256;
+      return Math.sqrt(weightR * dr * dr + weightG * dg * dg + weightB * db * db);
+    }
+
+    // 色名検索
+    function findClosestColor(r, g, b) {
+      let minDistance = Infinity;
+      let best = COLOR_DICTIONARY[0];
+      for (const item of COLOR_DICTIONARY) {
+        const dist = calcColorDist(r, g, b, item.r, item.g, item.b);
+        if (dist < minDistance) {
+          minDistance = dist;
+          best = item;
+        }
+      }
+      const matchPercent = Math.max(10, Math.min(100, Math.round(100 - (minDistance / 2.2))));
+      return { item: best, matchPercent };
+    }
+
+    // 日本塗料工業会 (日塗工) 色票番号検索
+    function findClosestJpmaColor(r, g, b) {
+      let minDistance = Infinity;
+      let best = JPMA_PALETTE[0];
+      for (const item of JPMA_PALETTE) {
+        const dist = calcColorDist(r, g, b, item.r, item.g, item.b);
+        if (dist < minDistance) {
+          minDistance = dist;
+          best = item;
+        }
+      }
+      return best;
+    }
+
+    // RGBからHSL計算
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h, s, l = (max + min) / 2;
+
+      if (max === min) {
+        h = s = 0;
+      } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+      }
+      return {
+        h: Math.round(h * 360),
+        s: Math.round(s * 100),
+        l: Math.round(l * 100)
+      };
+    }
+
+    // アプリ状態
+    let currentStream = null;
+    let facingMode = "environment";
+    let isFrozen = false;
+    let isMagnifierOn = true;
+    let isOutdoorMode = false;
+    let currentTarget = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    let currentColorData = {
+      hex: "#3498db",
+      r: 52, g: 152, b: 219,
+      hsl: { h: 204, s: 70, l: 53 },
+      jpName: "露草色",
+      enName: "Dayflower Blue",
+      jpmaCode: "69-70L",
+      jpmaMunsell: "10B 7/7",
+      matchPercent: 95
+    };
+    let savedPalette = JSON.parse(localStorage.getItem("colorlens_palette") || "[]");
+
+    // DOM要素
+    const video = document.getElementById("camera-video");
+    const frozenFrame = document.getElementById("frozen-frame");
+    const captureCanvas = document.getElementById("capture-canvas");
+    const captureCtx = captureCanvas.getContext("2d", { willReadFrequently: true });
+    const magnifier = document.getElementById("magnifier");
+    const magCanvas = document.getElementById("magnifier-canvas");
+    const magCtx = magCanvas.getContext("2d");
+    const reticle = document.getElementById("reticle");
+    const reticleRing = document.getElementById("reticle-ring");
+    const reticleSpot = document.getElementById("reticle-spot");
+    const videoWrapper = document.getElementById("video-wrapper");
+
+    // UI要素
+    const colorSwatch = document.getElementById("color-swatch");
+    const colorJpName = document.getElementById("color-jp-name");
+    const colorEnName = document.getElementById("color-en-name");
+    const colorMatchRate = document.getElementById("color-match-rate");
+    const valJpma = document.getElementById("val-jpma");
+    const valMunsell = document.getElementById("val-munsell");
+    const valHex = document.getElementById("val-hex");
+    const valRgb = document.getElementById("val-rgb");
+    const valHsl = document.getElementById("val-hsl");
+    const bookmarkBtn = document.getElementById("bookmark-btn");
+    const freezeBtn = document.getElementById("freeze-btn");
+    const freezeIcon = document.getElementById("freeze-icon");
+    const freezeText = document.getElementById("freeze-text");
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const toast = document.getElementById("toast");
+
+    updateReticlePosition(currentTarget.x, currentTarget.y);
+
+    // カメラ初期化
+    async function startCamera() {
+      try {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+
+        document.getElementById("permission-overlay").style.display = "none";
+        requestAnimationFrame(processFrameLoop);
+      } catch (err) {
+        console.error("Camera access error:", err);
+        document.getElementById("permission-overlay").innerHTML = `
+          <div class="perm-icon">⚠️</div>
+          <h2 class="perm-title">カメラにアクセスできませんでした</h2>
+          <div class="perm-author">ColorLens • Made by ちんいち</div>
+          <p class="perm-desc">カメラの使用が許可されていないか、ブラウザのセキュリティ設定によりブロックされました。<br><br><small style="color:#aaa">PCブラウザ等の場合はデモカラーモードで試せます。</small></p>
+          <button class="start-btn" onclick="startDemoMode()">デモモードで試す</button>
+        `;
+      }
+    }
+
+    // デモモード（フォールバック）
+    window.startDemoMode = function() {
+      document.getElementById("permission-overlay").style.display = "none";
+      const dummyCanvas = document.createElement("canvas");
+      dummyCanvas.width = 800; dummyCanvas.height = 600;
+      const dCtx = dummyCanvas.getContext("2d");
+
+      let hue = 0;
+      function drawDemo() {
+        hue = (hue + 0.5) % 360;
+        const grad = dCtx.createLinearGradient(0, 0, 800, 600);
+        grad.addColorStop(0, `hsl(${hue}, 85%, 50%)`);
+        grad.addColorStop(0.5, `hsl(${(hue + 80) % 360}, 85%, 55%)`);
+        grad.addColorStop(1, `hsl(${(hue + 160) % 360}, 85%, 45%)`);
+        dCtx.fillStyle = grad;
+        dCtx.fillRect(0, 0, 800, 600);
+        requestAnimationFrame(drawDemo);
+      }
+      drawDemo();
+
+      const stream = dummyCanvas.captureStream(30);
+      video.srcObject = stream;
+      video.play();
+      requestAnimationFrame(processFrameLoop);
+    };
+
+    document.getElementById("start-camera-btn").addEventListener("click", startCamera);
+
+    // リアルタイムサンプリングループ
+    function processFrameLoop() {
+      if (!isFrozen && video.readyState >= 2) {
+        sampleColorAtTarget();
+      }
+      requestAnimationFrame(processFrameLoop);
+    }
+
+    function sampleColorAtTarget() {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+
+      captureCanvas.width = vw;
+      captureCanvas.height = vh;
+      captureCtx.drawImage(video, 0, 0, vw, vh);
+
+      const rect = videoWrapper.getBoundingClientRect();
+      const normX = Math.max(0, Math.min(1, (currentTarget.x - rect.left) / rect.width));
+      const normY = Math.max(0, Math.min(1, (currentTarget.y - rect.top) / rect.height));
+
+      const px = Math.min(vw - 1, Math.max(0, Math.floor(normX * vw)));
+      const py = Math.min(vh - 1, Math.max(0, Math.floor(normY * vh)));
+
+      const pixel = captureCtx.getImageData(px, py, 1, 1).data;
+      const r = pixel[0], g = pixel[1], b = pixel[2];
+
+      updateColorUI(r, g, b);
+
+      if (isMagnifierOn) {
+        renderMagnifier(px, py, vw, vh);
+      }
+    }
+
+    function renderMagnifier(px, py, vw, vh) {
+      const sampleRadius = 15;
+      const sx = Math.max(0, Math.min(vw - sampleRadius * 2, px - sampleRadius));
+      const sy = Math.max(0, Math.min(vh - sampleRadius * 2, py - sampleRadius));
+
+      magCtx.imageSmoothingEnabled = false;
+      magCtx.clearRect(0, 0, 60, 60);
+      magCtx.drawImage(captureCanvas, sx, sy, sampleRadius * 2, sampleRadius * 2, 0, 0, 60, 60);
+
+      let magY = currentTarget.y < window.innerHeight / 2 ? currentTarget.y + 110 : currentTarget.y - 110;
+      let magX = Math.max(70, Math.min(window.innerWidth - 70, currentTarget.x));
+      magnifier.style.left = magX + "px";
+      magnifier.style.top = magY + "px";
+    }
+
+    function updateColorUI(r, g, b) {
+      const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+      const hsl = rgbToHsl(r, g, b);
+      const { item, matchPercent } = findClosestColor(r, g, b);
+      const jpmaMatch = findClosestJpmaColor(r, g, b);
+
+      currentColorData = {
+        hex, r, g, b, hsl,
+        jpName: item.jp,
+        enName: item.en,
+        jpmaCode: jpmaMatch.code,
+        jpmaMunsell: jpmaMatch.munsell,
+        matchPercent,
+        timestamp: new Date().toISOString()
+      };
+
+      colorSwatch.style.backgroundColor = hex;
+      reticleSpot.style.backgroundColor = hex;
+      colorJpName.textContent = item.jp;
+      colorEnName.textContent = item.en;
+      colorMatchRate.textContent = `${matchPercent}%一致`;
+
+      // 日塗工色票番号
+      valJpma.textContent = jpmaMatch.code;
+      valMunsell.textContent = `(${jpmaMatch.munsell})`;
+
+      valHex.textContent = hex;
+      valRgb.textContent = `rgb(${r}, ${g}, ${b})`;
+      valHsl.textContent = `hsl(${hsl.h}°, ${hsl.s}%, ${hsl.l}%)`;
+
+      const isSaved = savedPalette.some(p => p.hex === hex);
+      bookmarkBtn.classList.toggle("saved", isSaved);
+    }
+
+    function updateReticlePosition(x, y) {
+      currentTarget = { x, y };
+      reticle.style.left = x + "px";
+      reticle.style.top = y + "px";
+    }
+
+    function handlePointer(e) {
+      const x = e.clientX || (e.touches && e.touches[0].clientX);
+      const y = e.clientY || (e.touches && e.touches[0].clientY);
+      if (x != null && y != null) {
+        updateReticlePosition(x, y);
+        if (isFrozen) {
+          sampleColorAtTarget();
+        }
+      }
+    }
+    videoWrapper.addEventListener("pointerdown", handlePointer);
+    videoWrapper.addEventListener("pointermove", (e) => {
+      if (e.buttons > 0) handlePointer(e);
+    });
+    videoWrapper.addEventListener("touchmove", handlePointer, { passive: true });
+
+    // 一時停止 / フリーズ
+    freezeBtn.addEventListener("click", () => {
+      isFrozen = !isFrozen;
+      if (isFrozen) {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        captureCanvas.width = vw;
+        captureCanvas.height = vh;
+        captureCtx.drawImage(video, 0, 0, vw, vh);
+
+        frozenFrame.src = captureCanvas.toDataURL("image/png");
+        frozenFrame.style.display = "block";
+        video.style.display = "none";
+
+        freezeBtn.classList.add("frozen");
+        freezeIcon.textContent = "▶";
+        freezeText.textContent = "カメラを再開";
+        reticleRing.classList.add("frozen");
+        statusDot.classList.add("frozen");
+        statusText.textContent = "FREEZE";
+        showToast("画面を一時停止しました。タップで色を探索できます");
+      } else {
+        frozenFrame.style.display = "none";
+        video.style.display = "block";
+
+        freezeBtn.classList.remove("frozen");
+        freezeIcon.textContent = "⏸";
+        freezeText.textContent = "一時停止してピンポイント調査";
+        reticleRing.classList.remove("frozen");
+        statusDot.classList.remove("frozen");
+        statusText.textContent = "LIVE";
+      }
+    });
+
+    // ☀️ 屋外・ハイコントラストモード切替
+    const outdoorBtn = document.getElementById("outdoor-toggle-btn");
+    outdoorBtn.addEventListener("click", () => {
+      isOutdoorMode = !isOutdoorMode;
+      document.body.classList.toggle("outdoor-mode", isOutdoorMode);
+      outdoorBtn.classList.toggle("active", isOutdoorMode);
+      showToast(isOutdoorMode ? "☀️ 屋外サンライトモード ON" : "屋外モード OFF");
+    });
+
+    // ルーペトグル
+    document.getElementById("magnifier-toggle-btn").addEventListener("click", (e) => {
+      isMagnifierOn = !isMagnifierOn;
+      e.currentTarget.classList.toggle("active", isMagnifierOn);
+      magnifier.style.display = isMagnifierOn ? "block" : "none";
+    });
+
+    // カメラ切替
+    document.getElementById("camera-switch-btn").addEventListener("click", async () => {
+      facingMode = facingMode === "environment" ? "user" : "environment";
+      await startCamera();
+      showToast(facingMode === "environment" ? "背面カメラに切替" : "インカメラに切替");
+    });
+
+    // 日塗工色票番号のコピー
+    document.getElementById("jpma-bar").addEventListener("click", () => {
+      const text = `日塗工 ${currentColorData.jpmaCode} (${currentColorData.jpmaMunsell})`;
+      navigator.clipboard.writeText(currentColorData.jpmaCode).then(() => {
+        showToast(`${currentColorData.jpmaCode} をコピーしました`);
+        if (navigator.vibrate) navigator.vibrate(40);
+      });
+    });
+
+    // カラーコードチップのコピー
+    document.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const type = chip.dataset.type;
+        let text = "";
+        if (type === "hex") text = currentColorData.hex;
+        if (type === "rgb") text = `rgb(${currentColorData.r}, ${currentColorData.g}, ${currentColorData.b})`;
+        if (type === "hsl") text = `hsl(${currentColorData.hsl.h}, ${currentColorData.hsl.s}%, ${currentColorData.hsl.l}%)`;
+
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(`${text} をコピーしました`);
+          if (navigator.vibrate) navigator.vibrate(40);
+        });
+      });
+    });
+
+    // パレット保存
+    bookmarkBtn.addEventListener("click", () => {
+      const idx = savedPalette.findIndex(p => p.hex === currentColorData.hex);
+      if (idx !== -1) {
+        savedPalette.splice(idx, 1);
+        bookmarkBtn.classList.remove("saved");
+        showToast("パレットから削除しました");
+      } else {
+        savedPalette.unshift({ ...currentColorData });
+        if (savedPalette.length > 80) savedPalette.pop();
+        bookmarkBtn.classList.add("saved");
+        showToast(`日塗工 ${currentColorData.jpmaCode} (${currentColorData.jpName}) を保存しました`);
+      }
+      localStorage.setItem("colorlens_palette", JSON.stringify(savedPalette));
+      updatePaletteListUI();
+    });
+
+    // パレットモーダル
+    const paletteModal = document.getElementById("palette-modal");
+    document.getElementById("palette-btn").addEventListener("click", () => {
+      updatePaletteListUI();
+      paletteModal.classList.add("open");
+    });
+    document.getElementById("close-modal-btn").addEventListener("click", () => {
+      paletteModal.classList.remove("open");
+    });
+    paletteModal.addEventListener("click", (e) => {
+      if (e.target === paletteModal) paletteModal.classList.remove("open");
+    });
+
+    // About モーダル
+    const aboutModal = document.getElementById("about-modal");
+    document.getElementById("author-badge").addEventListener("click", () => {
+      aboutModal.classList.add("open");
+    });
+    document.getElementById("close-about-btn").addEventListener("click", () => {
+      aboutModal.classList.remove("open");
+    });
+    aboutModal.addEventListener("click", (e) => {
+      if (e.target === aboutModal) aboutModal.classList.remove("open");
+    });
+
+    function updatePaletteListUI() {
+      const countEl = document.getElementById("saved-count");
+      const listEl = document.getElementById("palette-list");
+      countEl.textContent = savedPalette.length;
+
+      if (savedPalette.length === 0) {
+        listEl.innerHTML = `<p style="text-align:center; color:rgba(255,255,255,0.4); padding:30px 0;">保存された色がありません。<br>カメラ画面の ★ ボタンで保存できます。</p>`;
+        return;
+      }
+
+      listEl.innerHTML = savedPalette.map((item, idx) => `
+        <div class="palette-item">
+          <div class="p-swatch" style="background-color: ${item.hex};"></div>
+          <div class="p-meta">
+            <div class="p-name">${item.jpName} (${item.hex})</div>
+            <div class="p-sub">日塗工: ${item.jpmaCode || '-'} ${item.jpmaMunsell ? '(' + item.jpmaMunsell + ')' : ''}</div>
+            <div class="p-hex">rgb(${item.r},${item.g},${item.b})</div>
+          </div>
+          <button class="action-btn" onclick="copyPaletteItem('${item.jpmaCode || item.hex}')">コピー</button>
+          <div class="p-delete" onclick="deletePaletteItem(${idx})">✕</div>
+        </div>
+      `).join("");
+    }
+
+    window.copyPaletteItem = function(val) {
+      navigator.clipboard.writeText(val).then(() => {
+        showToast(`${val} をコピーしました`);
+      });
+    };
+
+    window.deletePaletteItem = function(idx) {
+      savedPalette.splice(idx, 1);
+      localStorage.setItem("colorlens_palette", JSON.stringify(savedPalette));
+      updatePaletteListUI();
+      bookmarkBtn.classList.toggle("saved", savedPalette.some(p => p.hex === currentColorData.hex));
+    };
+
+    document.getElementById("clear-palette-btn").addEventListener("click", () => {
+      if (confirm("すべての保存パレットを削除しますか？")) {
+        savedPalette = [];
+        localStorage.removeItem("colorlens_palette");
+        updatePaletteListUI();
+        bookmarkBtn.classList.remove("saved");
+      }
+    });
+
+    document.getElementById("export-json-btn").addEventListener("click", () => {
+      const json = JSON.stringify(savedPalette, null, 2);
+      navigator.clipboard.writeText(json).then(() => {
+        showToast("JSONをクリップボードにコピーしました");
+      });
+    });
+
+    let toastTimer = null;
+    function showToast(msg) {
+      clearTimeout(toastTimer);
+      toast.textContent = msg;
+      toast.classList.add("show");
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 1600);
+    }
+  </script>
+</body>
+</html>

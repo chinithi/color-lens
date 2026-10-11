@@ -1,0 +1,23 @@
+{
+  "name": "ColorLens - 色調査カメラ (Made by ちんいち)",
+  "short_name": "ColorLens",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c0c0e",
+  "theme_color": "#121214",
+  "description": "スマホのカメラでリアルタイムに色を調査・分析・保存するアプリ (Created by ちんいち)",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
